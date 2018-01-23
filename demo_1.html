@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Three框架</title>
+        <script src="js/three.js"></script>
+        <script src="js/TrackballControls.js"></script>
+        <script src="js/Projector.js"></script>
+        <script src="js/Octree.js"></script>
+        <script src="js/canvasStats.js"></script>
+        <style type="text/css">
+            *{
+                padding: 0;
+                margin: 0;
+            }
+            html,body{
+                width: 100%;
+                height: 100%;
+                overflow: hidden;
+            }
+            div#canvas-frame {
+                border: none;
+                cursor: pointer;
+                width: 100%;
+                height: 100%;
+                background-color: #EEEEEE;
+            }
+
+        </style>
+        <script>
+            var renderer;
+            function initThree() {
+                width = document.getElementById('canvas-frame').clientWidth;
+                height = document.getElementById('canvas-frame').clientHeight;
+                renderer = new THREE.WebGLRenderer({
+                    antialias : true
+                });
+                renderer.setSize(width, height);
+                renderer.shadowMapEnabled = true;
+                renderer.shadowMapType = THREE.PCFShadowMap;
+                document.getElementById('canvas-frame').appendChild(renderer.domElement);
+                renderer.setClearColor(0xDDDDDD, 1.0);
+                //加入鼠标拖动对象的一系列监听事件
+                renderer.domElement.addEventListener( 'mousemove', onDocumentMouseMove, false );
+                renderer.domElement.addEventListener( 'mousedown', onDocumentMouseDown, false );
+                renderer.domElement.addEventListener( 'mouseup', onDocumentMouseUp, false );
+            }
+            var stats;
+            function initStats() {
+                stats = new Stats();
+                stats.domElement.style.position = 'absolute';
+                stats.domElement.style.left = '0px';
+                stats.domElement.style.top = '0px';
+                document.getElementById('canvas-frame').appendChild(stats.domElement);
+            }
+            var camera;
+            function initCamera() {
+                camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 10000 );
+                camera.position.x = 300;
+                camera.position.y = 300;
+                camera.position.z = 150;
+                camera.up.x = 0;
+                camera.up.y = 0;
+                camera.up.z = 1;
+                camera.lookAt({x : 0,y : 0,z : 0});
+            }
+            var controls;
+            function initControl(){
+                controls = new THREE.TrackballControls( camera );
+                controls.rotateSpeed = 1.8;
+                controls.zoomSpeed = 1.8;
+                controls.panSpeed = 1.5;
+
+                controls.noZoom = false;
+                controls.noPan = false;
+
+                controls.staticMoving = true;
+                controls.dynamicDampingFactor = 0.8;
+                controls.keys = [ 65, 83, 68 ];
+
+                controls.addEventListener( 'change', render );
+            }
+            var scene;
+            function initScene() {
+                scene = new THREE.Scene();
+            }
+            var light;
+            var linelight;
+            var pointlight;
+            function initLight() {
+                pointlight = new THREE.PointLight(0xFFFFFF);
+                pointlight.position.set(2000, 4000, 3000);
+                scene.add(pointlight);
+
+                linelight = new THREE.SpotLight(0xFFFFFF,1.0,10000);
+                linelight.position.set(0,0, 2000);
+                scene.add(linelight);
+
+                light = new THREE.AmbientLight(0xFFFFFF);
+                scene.add(light);
+            }
+
+            var projector;
+            function initProjector(){
+                projector = new THREE.Projector();
+            }
+
+            var objects = [];
+            var plane;
+            function initObject() {
+                //Ground
+                var _ground = new THREE.PlaneGeometry(6000, 6000 ,8,8);
+                var material = new THREE.MeshBasicMaterial({color:0x222222, opacity: 0.1});
+                var ground = new THREE.Mesh( _ground,material );
+                _ground.visible = true;
+
+                //ground.position.set(-3000,-3000,0);
+                scene.add( ground );
+                plane = ground;
+
+                //xyz辅助线
+                var _x = new THREE.Geometry();
+                _x.vertices.push( new THREE.Vector3( -3000, 0, 0 ) );
+                _x.vertices.push( new THREE.Vector3( 3000, 0, 0 ) );
+                var x = new THREE.Line( _x, new THREE.LineBasicMaterial( { color: 0xffdddd, opacity: 0.4 } ) );
+                scene.add( x );
+                var _y = new THREE.Geometry();
+                _y.vertices.push( new THREE.Vector3( 0,-3000, 0 ) );
+                _y.vertices.push( new THREE.Vector3( 0,3000, 0 ) );
+                var y = new THREE.Line( _y, new THREE.LineBasicMaterial( { color: 0xddffdd, opacity: 0.4 } ) );
+                scene.add( y );
+                var _z = new THREE.Geometry();
+                _z.vertices.push( new THREE.Vector3( 0, 0, -3000 ) );
+                _z.vertices.push( new THREE.Vector3( 0, 0, 3000 ) );
+                var z = new THREE.Line( _z, new THREE.LineBasicMaterial( { color: 0xddddff, opacity: 0.4 } ) );
+                scene.add( z );
+
+                var padding = 5;
+                var cubeWidth = 40;
+                var cubelength = 3;
+                var cubeColor = [0x0000DD,0x00DD00,0xDD0000,0xFF8C00,0xDDAA00,0xFFFFFF];
+                //var cubeColor = [0xCC3333,0xCCCC33,0xCC33CC,0x33CC33,0x33CCCC,0x3333CC];
+                for(var x = 0 ; x < cubelength ; x++){
+                  for(var y = 0 ; y < cubelength ; y++){
+                      for(var z = 0 ; z < cubelength ; z++){
+                        var thisCubeWidth = new Object();
+                        thisCubeWidth.x = thisCubeWidth.y = thisCubeWidth.z = cubeWidth;
+                        var _cube = new THREE.CubeGeometry(thisCubeWidth.x,thisCubeWidth.y,thisCubeWidth.z);
+
+                        var materials = [];
+                        for (var i = 0; i < 6; ++i) {
+                            materials.push(new THREE.MeshLambertMaterial({
+                                color:cubeColor[i]
+                            }));
+                        }
+                        var cube = new THREE.Mesh( _cube,new THREE.MeshFaceMaterial(materials));
+                        cube.position.set(
+                            cubeWidth/2+(padding+cubeWidth)*x,
+                            cubeWidth/2+(padding+cubeWidth)*y,
+                            cubeWidth/2+(padding+cubeWidth)*z
+                        );
+                        /*cube.position.set(
+                            cubeWidth/2+(padding+cubeWidth)*x - cubelength*cubeWidth/2 - padding*(cubelength-1)/2,
+                            cubeWidth/2+(padding+cubeWidth)*y - cubelength*cubeWidth/2 - padding*(cubelength-1)/2,
+                            cubeWidth/2+(padding+cubeWidth)*z - cubelength*cubeWidth/2 - padding*(cubelength-1)/2
+                        );*/
+                        objects.push(cube);
+                        scene.add(cube);
+                        }
+                    }
+                }
+
+
+
+                /*
+
+                var _line = new THREE.Geometry();
+                _line.vertices.push( new THREE.Vector3( 0, 0, 0 ) );
+                _line.vertices.push( new THREE.Vector3( 0, 500, 0 ) );
+                _line.vertices.push( new THREE.Vector3( 500, 500, 0 ) );
+                _line.vertices.push( new THREE.Vector3( 500, 0, 0 ) );
+                _line.vertices.push( new THREE.Vector3( 0, 0, 0 ) );
+                line = new THREE.Line( _line, new THREE.LineBasicMaterial( { color: 0x336699, opacity: 0.4 } ) );
+                scene.add( line );
+                */
+
+            }
+
+            var mouse = new THREE.Vector3(),offset = new THREE.Vector3(),INTERSECTED,SELECTED;
+            function onDocumentMouseDown(event){
+                event.preventDefault();
+                var vector = new THREE.Vector3( mouse.x, mouse.y, 0.5 );
+                projector.unprojectVector( vector, camera );
+                var raycaster = new THREE.Raycaster( camera.position, vector.sub( camera.position ).normalize() );
+                var intersects = raycaster.intersectObjects( objects );
+                console.log(intersects);
+                if ( intersects.length > 0 ) {
+                    //不能改变视角了
+                    controls.enabled = false;
+                    //把选中的对象放到全局变量SELECTED中
+                    SELECTED = intersects[ 0 ].object;
+                    //再和水平面相交
+                    //var intersects = raycaster.intersectObject( plane );
+
+                    //选中位置和水平面位置（物体中心）的偏移量
+                    offset.copy( intersects[ 0 ].point ).sub( plane.position );
+                    //改变鼠标的样式
+                    document.getElementById('canvas-frame').style.cursor = 'move';
+
+                }
+            }
+            function onDocumentMouseUp(event){
+                event.preventDefault();
+                //又能改变视角了
+                controls.enabled = true;
+                //如果有相交物体
+                if ( INTERSECTED ) {
+                    //把位置给水平面
+                    //plane.position.copy( INTERSECTED.position );
+                    //选中物体置空
+                    SELECTED = null;
+                }
+                //改变鼠标的样式
+                    document.getElementById('canvas-frame').style.cursor = 'auto';
+
+            }
+
+            //当鼠标移动时触发的事件
+            function onDocumentMouseMove( event ) {
+                //阻止本来的默认事件，比如浏览器的默认右键事件是弹出浏览器的选项
+                event.preventDefault();
+
+
+                //vector.sub( camera.position ).normalize()//变换过后的向量vector减去相机的位置向量后标准化
+                //新建一条从相机的位置到vector向量的一道光线
+                //是否有东西被选中
+                if ( SELECTED ) {
+
+                    mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+                    mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+
+                    //新建一个三维变换半单位向量 假设z方向就是0.5,这样我左右移的时候，还会有前后移的效果
+                    var vector = new THREE.Vector3( mouse.x*2, mouse.y*2, (mouse.y+mouse.z)/2 );
+
+                    //屏幕和场景转换工具根据照相机，把这个向量从屏幕转化为场景中的向量
+                    projector.unprojectVector( vector, camera );
+                    var raycaster = new THREE.Raycaster( camera.position, vector.sub( camera.position ).normalize() );
+                    //有的话取到这条光线射到的物体所在水平面上所有相交元素的集合,所以这样就可以限制每次拖动距离不能超出水平面panel
+                    var intersects = raycaster.intersectObject( plane );
+                    //这个鼠标点中的点的位置减去偏移向量，新位置赋值给选中物体
+                    if(intersects.length > 0){
+                        var _z = SELECTED.position.z;
+                        //SELECTED.position.copy( intersects[ 0 ].point.sub( offset ) );
+                        SELECTED.position.copy( intersects[ 0 ].point);
+                        SELECTED.position.z = _z;
+                    }
+                    return;
+
+                }else{
+                    mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+                    mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+
+                    //新建一个三维变换半单位向量 假设z方向就是0.5,这样我左右移的时候，还会有前后移的效果
+                    var vector = new THREE.Vector3( mouse.x, mouse.y, 0.5 );
+
+                    //屏幕和场景转换工具根据照相机，把这个向量从屏幕转化为场景中的向量
+                    projector.unprojectVector( vector, camera );
+                    var raycaster = new THREE.Raycaster( camera.position, vector.sub( camera.position ).normalize() );
+                    //否则的话，光线和所有物体相交，返回相交的物体
+                    var intersects = raycaster.intersectObjects( objects );
+                    //如果有物体相交了
+                    if ( intersects.length > 0 ) {
+                        //并且相交物体不是上一个相交物体
+                        if ( INTERSECTED != intersects[ 0 ].object ) {
+                            //将这个对象放到INTERSECTED中
+                            INTERSECTED = intersects[ 0 ].object;
+                            //改变水平面的位置
+                            //plane.position.copy( INTERSECTED.position );
+                            //并把水平面指向到相机的方向
+                            //plane.lookAt( camera.position );
+
+                        }
+                        //改变鼠标的样式
+                        document.getElementById('canvas-frame').style.cursor = 'pointer';
+
+                    } else {
+                        //改变鼠标的样式
+                        document.getElementById('canvas-frame').style.cursor = 'auto';
+
+                    }
+                }
+
+            }
+
+
+            function render(){
+
+                stats.update();
+                renderer.render( scene, camera );
+            }
+
+            function animate() {
+                if(controls){
+                    controls.update();
+                }
+                requestAnimationFrame( animate );
+                render();
+            }
+
+            function onWindowResize() {
+
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+
+                renderer.setSize( window.innerWidth, window.innerHeight );
+
+                controls.handleResize();
+
+                render();
+
+            }
+
+            function init() {
+                initThree();
+                initCamera();
+                initControl();
+                initProjector();
+                initScene();
+                initLight();
+                initObject();
+                initStats();
+                render();
+                animate();
+            }
+        </script>
+    </head>
+
+    <body onload="init();">
+        <div id="canvas-frame"></div>
+    </body>
+</html>

@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Three框架</title>
+        <script src="js/three.js"></script>
+        <script src="js/canvasStats.js"></script>
+        <script src="js/OrbitControls.js"></script>
+        <script src="js/TrackballControls.js"></script>
+        <style type="text/css">
+            *{
+                padding: 0;
+                margin: 0;
+            }
+            html,body{
+                width: 100%;
+                height: 100%;
+                overflow: hidden;
+            }
+            div#canvas-frame {
+                border: none;
+                cursor: pointer;
+                width: 100%;
+                height: 100%;
+                background-color: #EEEEEE;
+            }
+
+        </style>
+        <script>
+            var three3D = {
+            	clientWidth : 0,
+            	clientHeight : 0,
+            	renderer : null,
+            	stats : null,
+            	camera : null,
+            	scene : null,
+            	pointLight : null,
+            	spotlight : null,
+				box : null,
+            	boxSize : {x:200,y:80,z:200},
+            	boxColor : [0xCC3333,0xCCCC33,0xCC33CC,0x33CC33,0x33CCCC,0x3333CC],
+            	plane : null,
+            	player : {
+                	bottomRadius : 30,
+                	topRadius : 20,
+                	maxHeight : 80,
+                	minHeight : 40,
+                	color : 0xCC0000,
+                	segemnt : 16,
+                	ySpeed : 0,
+                	xSpeed : 0.4,
+                	compressHeight : 0.7, //按压最小高度
+                	compressSpeed : 0.01, //按压速度
+                	jumpSpeed : 0, //跳跃初速度
+                	jumpAccel : 2, //跳跃加速度
+                	jumpStatus : false,
+                	el : null
+                },
+                controlStatus : false,//控制状态
+                controlTimer : 0,//按压时间(帧)
+
+            	init: function(){
+	                this.initThree();
+	                this.initCamera();
+	                this.initScene();
+	                this.initLight();
+	                this.initObject();
+	                this.addListner();
+	                this.animate(this);
+	            },
+            	initThree : function(){
+            		this.clientWidth = document.getElementById('canvas-frame').clientWidth;
+                	this.clientHeight = document.getElementById('canvas-frame').clientHeight;
+                	this.renderer = new THREE.WebGLRenderer({
+	                    antialias : true
+	                });
+                	this.renderer.setSize(this.clientWidth, this.clientHeight);
+                	this.renderer.shadowMapEnabled = true;//告诉render我们需要阴影(允许阴影隐射)
+                	document.getElementById('canvas-frame').appendChild(this.renderer.domElement);
+	                this.renderer.setClearColor(0xFFFFFF, 1.0);
+
+	                //刷新率监视器
+	                this.stats = new Stats();
+	                this.stats.domElement.style.position = 'absolute';
+	                this.stats.domElement.style.left = '0px';
+	                this.stats.domElement.style.top = '0px';
+	                document.getElementById('canvas-frame').appendChild(this.stats.domElement);
+            	},
+            	initCamera : function(){
+            		this.camera = new THREE.PerspectiveCamera(40, this.clientWidth/this.clientHeight, 1, 10000);
+	                //this.camera.position.set(500,1000,1000);
+	                this.camera.position.x = 1000;
+	                this.camera.position.y = 1500;
+	                this.camera.position.z = 1000;
+	                this.camera.up.x = 0;
+	                this.camera.up.y = 1;
+	                this.camera.up.z = 0;
+	                this.camera.lookAt({x:0,y:0,z:0});
+            	},
+            	initScene : function(){
+            		this.scene = new THREE.Scene();
+            	},
+            	initLight : function(){
+            		this.pointLight = new THREE.PointLight(0xFFFFFF);
+	                this.pointLight.position.set(1000,1000,-1000);
+			        this.pointLight.distance = 10000;
+			        this.pointLight.intensity = 1;
+			        this.scene.add(this.pointLight);
+            		this.spotlight = new THREE.SpotLight(0xFFFFFF);
+	                this.spotlight.position.set(1000,1000,-1000);
+					this.spotlight.castShadow = true;
+					this.spotlight.shadowDarkness = 0.3;
+					this.spotlight.shadowMapHeight = 2048;
+	            	this.spotlight.shadowMapWidth = 2048;
+	                this.scene.add(this.spotlight);
+            	},
+            	initObject : function(){
+            		//地面初始化
+            		var _plane = new THREE.PlaneGeometry(6000, 6000 ,1,1);
+                	var material = new THREE.MeshLambertMaterial({color:0xAACCEE, opacity: 0.1});
+	                this.plane = new THREE.Mesh(_plane,material);
+	                this.plane.rotation.x =  -90 * Math.PI / 180;
+	                this.plane.receiveShadow = true;//地面接受阴影
+	                this.scene.add(this.plane);
+
+                	//xyz辅助线
+	                var _x = new THREE.Geometry();
+	                _x.vertices.push( new THREE.Vector3( -3000, 0, 0 ) );
+	                _x.vertices.push( new THREE.Vector3( 3000, 0, 0 ) );
+	                var x = new THREE.Line( _x, new THREE.LineBasicMaterial( { color: 0xffdddd, opacity: 0.4 } ) );
+	                this.scene.add( x );
+	                var _y = new THREE.Geometry();
+	                _y.vertices.push( new THREE.Vector3( 0,-3000, 0 ) );
+	                _y.vertices.push( new THREE.Vector3( 0,3000, 0 ) );
+	                var y = new THREE.Line( _y, new THREE.LineBasicMaterial( { color: 0xddffdd, opacity: 0.4 } ) );
+	                this.scene.add( y );
+	                var _z = new THREE.Geometry();
+	                _z.vertices.push( new THREE.Vector3( 0, 0, -3000 ) );
+	                _z.vertices.push( new THREE.Vector3( 0, 0, 3000 ) );
+	                var z = new THREE.Line( _z, new THREE.LineBasicMaterial( { color: 0xddddff, opacity: 0.4 } ) );
+	                this.scene.add( z );
+
+                	//创建盒子
+	                var _box = new THREE.CubeGeometry(this.boxSize.x,this.boxSize.y,this.boxSize.z);
+	                var materials = [];
+	                for (var i = 0; i < 6; i++) {
+	                    materials.push(new THREE.MeshLambertMaterial({
+	                        color:this.boxColor[i]
+	                    }));
+	                }
+	                this.box = new THREE.Mesh( _box,new THREE.MeshFaceMaterial(materials));
+	                this.box.position.y = this.boxSize.y/2;
+	                this.box.castShadow=true;
+	                this.box.receiveShadow=true;//地面接受阴影
+	                this.scene.add(this.box);
+
+
+				    var playerMaterial = new THREE.MeshLambertMaterial({color:this.player.color});
+				    this.player.el = new THREE.Mesh(
+				        new THREE.CylinderGeometry(
+				        	this.player.topRadius,
+				        	this.player.bottomRadius,
+				        	this.player.maxHeight,
+				        	this.player.segemnt
+				        ),playerMaterial);
+				 	this.player.el.position.y = this.player.maxHeight/2 + this.boxSize.y;
+	                this.player.el.castShadow = true;
+				    this.scene.add(this.player.el);
+            	},
+            	animate : function(self){
+            		if(self.controlStatus){//按压状态
+            			if(self.player.el.scale.y > self.player.compressHeight){
+            				self.controlTimer++;
+            				self.player.el.scale.y = self.player.el.scale.y / ( 1 + self.player.compressSpeed );
+            				self.player.el.position.y = self.player.maxHeight * self.player.el.scale.y / 2  + this.boxSize.y;
+            				self.player.jumpSpeed = self.controlTimer;
+            			}
+            		}else{//释放状态
+            			var nowScaleY = self.player.el.scale.y * ( 1 + self.player.compressSpeed * 6 ); //回弹
+	            		self.player.el.scale.y = nowScaleY >= 1 ? 1 : nowScaleY;
+	            		var groundPosition = self.player.maxHeight * self.player.el.scale.y / 2  + this.boxSize.y; //相对地面
+	            		if(self.player.jumpStatus){//跳跃状态(Y轴)
+	            			if(self.player.jumpStatus==1){//上跳
+	            				if(self.player.ySpeed >= 0){
+				                    self.player.ySpeed -= self.player.jumpAccel;
+				                    self.player.el.position.y += self.player.ySpeed;
+				                    self.player.el.position.z -= self.player.xSpeed * self.controlTimer;
+				                }else{
+				                    self.player.jumpStatus = 2;
+				                }
+	            			}else{//下落
+	            				if(self.player.el.position.y - ( self.player.ySpeed + self.player.jumpAccel) >= groundPosition ){
+				                    self.player.ySpeed += self.player.jumpAccel;
+				                    self.player.el.position.y -= self.player.ySpeed;
+				                    self.player.el.position.z -= self.player.xSpeed * self.controlTimer;
+				                }else{
+				                    self.controlTimer = 0;
+				                    self.player.jumpStatus = false;
+				                    self.player.el.position.y = groundPosition;
+
+				                }
+	            			}
+	            		}
+
+            		}
+            		//console.log(this.player.el.scale.y);
+	                self.renderer.render(self.scene, self.camera);
+	                requestAnimationFrame(function(){
+	                	self.animate(self)
+	                });
+	                self.stats.update();
+	            },
+			    addListner: function() {
+			        document.addEventListener('mousedown', this.onDocumentMouseDown, false);
+			        document.addEventListener('touchstart', this.onDocumentTouchStart, false);
+
+			        window.addEventListener('resize', this.onWindowResize, false);
+			    },
+			    onDocumentMouseDown: function(event) {
+			        console.log(three3D.controlTimer);
+			        if(three3D.controlTimer == 0 && three3D.player.el.position.y == three3D.player.maxHeight * three3D.player.el.scale.y / 2  + three3D.boxSize.y){
+			        	document.addEventListener('mouseup', three3D.onDocumentMouseUp, false);
+			        	//如果动画都结束了才能再次开始
+			        	three3D.controlStatus = true;
+			        }
+			        console.log('(Mouse Down)');
+			    },
+			    onDocumentMouseUp: function(event) {
+			        document.removeEventListener('mouseup', three3D.onDocumentMouseUp);
+			        three3D.controlStatus = false;
+			        three3D.player.ySpeed = three3D.player.jumpSpeed;
+			        three3D.player.jumpStatus = 1;
+			        //three3D.controlTimer = 0;
+			        console.log('(Mouse Up)');
+			    },
+			    onDocumentTouchStart: function(event) {
+			        event.preventDefault();
+			        document.addEventListener('touchend', three3D.onDocumentMouseUp);
+			    },
+			    onDocumentTouchEnd: function(event) {
+			        event.preventDefault();
+			        document.removeEventListener('touchend', three3D.onDocumentMouseUp);
+			    },
+			    onWindowResize: function() {
+            		three3D.clientWidth = document.getElementById('canvas-frame').clientWidth;
+                	three3D.clientHeight = document.getElementById('canvas-frame').clientHeight;
+			        three3D.camera.aspect = three3D.clientWidth / three3D.clientHeight;
+			        three3D.camera.updateProjectionMatrix();
+			        three3D.renderer.setSize(three3D.clientWidth, three3D.clientHeight);
+			    }
+            }
+
+
+/*
+            var renderer,stats;
+            function initThree() {
+                width = document.getElementById('canvas-frame').clientWidth;
+                height = document.getElementById('canvas-frame').clientHeight;
+                renderer = new THREE.WebGLRenderer({
+                    antialias : true
+                });
+                renderer.setSize(width, height);
+                renderer.shadowMapEnabled=true;//告诉render我们需要阴影(允许阴影隐射)
+
+
+                document.getElementById('canvas-frame').appendChild(renderer.domElement);
+                renderer.setClearColor(0xFFFFFF, 1.0);
+
+
+                stats = new Stats();
+                stats.domElement.style.position = 'absolute';
+                stats.domElement.style.left = '0px';
+                stats.domElement.style.top = '0px';
+                document.getElementById('canvas-frame').appendChild(stats.domElement);
+            }
+            var camera;
+            function initCamera() {
+                camera = new THREE.PerspectiveCamera(40, width/height, 1, 10000);
+                camera.position.x = 500;
+                camera.position.y = 1000;
+                camera.position.z = 1000;
+                camera.up.x = 0;
+                camera.up.y = 1;
+                camera.up.z = 0;
+                camera.lookAt({
+                    x : 0,
+                    y : 0,
+                    z : 0
+                });
+            }
+            var scene;
+            function initScene() {
+                scene = new THREE.Scene();
+            }
+
+
+			var light;
+            var linelight;
+            var pointlight;
+            function initLight() {
+
+            	linelight = new THREE.PointLight(0xFFFFFF);
+                linelight.position.set(1000, 1000, -1000);
+		        linelight.distance = 10000;
+		        linelight.intensity = 1;
+		        scene.add(linelight);
+
+                pointlight = new THREE.SpotLight(0xFFFFFF);
+                pointlight.position.set(1000, 1000, -1000);
+				pointlight.castShadow = true;
+				pointlight.shadowDarkness = 0.3;
+				pointlight.shadowMapHeight = 2048;
+            	pointlight.shadowMapWidth = 2048;
+                scene.add(pointlight);
+
+                linelight = new THREE.SpotLight(0xbbddff, 1.0, 0);
+                linelight.position.set(600, 400, 400);
+                scene.add(linelight);
+
+                //pointlight = new THREE.PointLight(0xDD55AA);
+                //pointlight.position.set(2000, 2000, 2000);
+                //scene.add(pointlight);
+            }
+            var cube;
+            var cubeWidth = {
+                	x : 200 ,
+                	y : 80 ,
+                	z : 200
+                }
+            var cubeColor = [0xCC3333,0xCCCC33,0xCC33CC,0x33CC33,0x33CCCC,0x3333CC];
+            var plane;
+            var player = {
+                	bottomRadius:30,
+                	topRadius:20,
+                	maxHeight:80,
+                	minHeight:40,
+                	color:0xCC0000,
+                	segemnt:16,
+                	el:null
+                }
+            function initObject() {
+                //Ground
+                var _ground = new THREE.PlaneGeometry(6000, 6000 ,1,1);
+                var material = new THREE.MeshLambertMaterial({color:0xAACCEE, opacity: 0.1});
+                var plane = new THREE.Mesh( _ground,material );
+                plane.rotation.x =  -90 * Math.PI / 180;
+                plane.receiveShadow = true;//地面接受阴影
+                scene.add( plane );
+
+                //xyz辅助线
+                var _x = new THREE.Geometry();
+                _x.vertices.push( new THREE.Vector3( -3000, 0, 0 ) );
+                _x.vertices.push( new THREE.Vector3( 3000, 0, 0 ) );
+                var x = new THREE.Line( _x, new THREE.LineBasicMaterial( { color: 0xffdddd, opacity: 0.4 } ) );
+                scene.add( x );
+                var _y = new THREE.Geometry();
+                _y.vertices.push( new THREE.Vector3( 0,-3000, 0 ) );
+                _y.vertices.push( new THREE.Vector3( 0,3000, 0 ) );
+                var y = new THREE.Line( _y, new THREE.LineBasicMaterial( { color: 0xddffdd, opacity: 0.4 } ) );
+                scene.add( y );
+                var _z = new THREE.Geometry();
+                _z.vertices.push( new THREE.Vector3( 0, 0, -3000 ) );
+                _z.vertices.push( new THREE.Vector3( 0, 0, 3000 ) );
+                var z = new THREE.Line( _z, new THREE.LineBasicMaterial( { color: 0xddddff, opacity: 0.4 } ) );
+                scene.add( z );
+
+
+                var _cube = new THREE.CubeGeometry(cubeWidth.x,cubeWidth.y,cubeWidth.z);
+                var materials = [];
+                for (var i = 0; i < 6; i++) {
+                    materials.push(new THREE.MeshLambertMaterial({
+                        color:cubeColor[i]
+                    }));
+                }
+                cube = new THREE.Mesh( _cube,new THREE.MeshFaceMaterial(materials));
+                cube.position.y = cubeWidth.y/2;
+                cube.castShadow=true;
+                cube.receiveShadow=true;//地面接受阴影
+                scene.add(cube);
+
+
+
+			    var sphereMaterial = new THREE.MeshLambertMaterial({ color:player.color });
+			    player.el = new THREE.Mesh(
+			        new THREE.CylinderGeometry(player.topRadius,player.bottomRadius,player.maxHeight,player.segemnt),
+			        sphereMaterial
+			    );
+
+			 	player.el.position.y = player.maxHeight/2 + cubeWidth.y;
+                player.el.castShadow = true;
+			    scene.add(player.el);
+
+            }
+
+            function render(){
+                //renderer.clear();
+                var rotationNum = 1;
+                line.rotation.z = line.rotation.z/Math.PI*360 > 360 ? 0 : line.rotation.z;
+                line.rotation.z = line.rotation.z + rotationNum * Math.PI / 360;
+                //line.rotation.z = line.rotation.z > 360 ? (line.rotation.z-360 + ) * Math.PI / 180 : (line.rotation.z + 1) * Math.PI / 180;
+               // console.log(line.rotation.z  * 180 / Math.PI );
+
+
+                renderer.render(scene, camera);
+                requestAnimationFrame(render);
+
+                stats.update();
+            }
+
+            function threeStart() {
+                initThree();
+                initCamera();
+                initScene();
+                initLight();
+                initObject();
+                render();
+            }*/
+
+        </script>
+    </head>
+
+    <body onload="three3D.init();">
+        <div id="canvas-frame"></div>
+    </body>
+</html>
